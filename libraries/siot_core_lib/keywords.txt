@@ -1,0 +1,4 @@
+WiFiServer  KEYWORD1
+adhoc   KEYWORD1
+ssid    KEYWORD1
+SOICT   KEYWORD2
