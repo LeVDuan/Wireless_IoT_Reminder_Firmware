@@ -37,15 +37,21 @@ const static uint8_t PIN_RADIO_SCK = 18;
 const static uint8_t PIN_VIBRA_IN = 15;
 
 const static uint8_t RADIO_ID = 100;
-static uint8_t DESTINATION_RADIO_ID;
+static uint8_t DESTINATION_RADIO_ID = 2;
 
 
 // Note the packed attribute.
-struct __attribute__((packed)) RadioPacket 
+typedef enum {
+  VIBRATE,
+  LIGHT,
+  VIBATE_LIGHT,
+  BROAD_CAST
+} Opcode_t;
+
+struct __attribute__((packed)) RadioPacket  // Note the packed attribute.
 {
-    uint8_t FromRadioId;
-    uint8_t VibrationTime;
-    String mess;
+  Opcode_t opcode;
+  String command;
 };
 
 NRFLite _radio;
@@ -75,31 +81,22 @@ void loop()
   }
 
   // Đọc dữ liệu được gửi từ serial với định dạng: "DESTINATION_RADIO_ID VibraionTime Message"
-  String inputString = Serial.readStringUntil('\n');
+  _radioData.opcode = VIBATE_LIGHT;
+  _radioData.command = Serial.readStringUntil('\n');
+  Serial.println(_radioData.opcode);
 
-  uint8_t index = inputString.indexOf(' ');
-  String tmpID = inputString.substring(0, index);
-  DESTINATION_RADIO_ID = tmpID.toInt();
-  Serial.println(DESTINATION_RADIO_ID);
-
-  String tmpVibra = inputString.substring(index + 1);
-  _radioData.VibrationTime = tmpVibra.toInt();
-  Serial.println(_radioData.VibrationTime);
-
-  _radioData.mess = inputString.substring(index + 1);
-  Serial.println(_radioData.mess);
   Serial.print("Sending: ");
     
     if (_radio.send(DESTINATION_RADIO_ID, &_radioData, sizeof(_radioData)))
     {
         Serial.println("...Success");
-        Serial.println(_radioData.mess);
-        _radioData.mess = "";
+        Serial.println(_radioData.command);
+        _radioData.command = "";
     }
     else
     {
         Serial.println("...Failed");
-        _radioData.mess = "";
+        _radioData.command = "";
     }
 
     delay(1000);
