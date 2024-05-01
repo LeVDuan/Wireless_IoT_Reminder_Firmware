@@ -32,6 +32,7 @@ const static uint8_t PIN_RADIO_SCK = 18;
 const static uint8_t PIN_VIBRA_IN = 15;
 const static uint8_t PIN_LIGHT_IN = 2;
 
+// Jumper for ID pin
 const static uint8_t PIN_ID_1 = 27;
 const static uint8_t PIN_ID_2 = 26;
 const static uint8_t PIN_ID_3 = 25;
@@ -41,16 +42,19 @@ static uint8_t TRANSMITTER_RADIO_ID = 100;
 static uint8_t RADIO_ID;
 
 typedef enum {
-  VIBRATE,
-  LIGHT,
-  VIBATE_LIGHT,
-  BROAD_CAST
+  VBR,  // Vibrate
+  LGT,  // Light
+  VLG,  // Vibrate and light
+  BRD   // Broadcast
 } Opcode_t;
 
-struct __attribute__((packed)) RadioPacket  // Note the packed attribute.
-{
+// Note the packed attribute.
+struct __attribute__((packed)) RadioPacket {
   Opcode_t opcode;
-  String command;
+  uint8_t fromID;
+  uint8_t controlTime,
+    periodTime,
+    pauseTime;
 };
 
 NRFLite _radio;
@@ -107,22 +111,13 @@ int getID() {
                     For example, set the value to 3 2, 
                     then after 3 seconds of vibrate/light up the device will stop for 2 seconds then continue to vibrate/light up.
 */
-void handleControlCommand(const char* command, Opcode_t opcode) {
-  int controlTime, period, pause;
-  Serial.println(command);
-  sscanf(command, "%d %d %d", &controlTime, &period, &pause);  // Phân tích chuỗi
-  Serial.print("controlTime = ");
-  Serial.println(controlTime);
-  Serial.print("period = ");
-  Serial.println(period);
-  Serial.print("pause = ");
-  Serial.println(pause);
+void handleControlCommand() {
 
-  uint8_t destinationPin = 0;
-  if (opcode == VIBRATE) {
-    destinationPin = PIN_VIBRA_IN;
-  } else if (opcode == LIGHT) {
-    destinationPin = PIN_LIGHT_IN;  // Chân pin của đèn mặc định D2 của ESP32 CH340c
+  uint8_t controlPin = 0;
+  if (_radioData.opcode == VBR) {
+    controlPin = PIN_VIBRA_IN;
+  } else if (_radioData.opcode == LGT) {
+    controlPin = PIN_LIGHT_IN;  // Chân pin của đèn mặc định D2 của ESP32 CH340c
   }
 
   unsigned long startTime = millis();
@@ -130,28 +125,27 @@ void handleControlCommand(const char* command, Opcode_t opcode) {
   while (1) {
     currentTime = millis();
     elapsedTime = currentTime - startTime;
-    if (elapsedTime >= controlTime * 1000 && controlTime != 0) {
+    if (elapsedTime >= _radioData.controlTime * 1000 && _radioData.controlTime != 0) {
       Serial.println(currentTime - startTime);
       return;
     }
-    if (opcode == VIBATE_LIGHT) {
+    if (_radioData.opcode == VLG) {
       digitalWrite(PIN_VIBRA_IN, HIGH);
       digitalWrite(PIN_LIGHT_IN, HIGH);
-      delay(period * 1000);
+      delay(_radioData.periodTime * 1000);
       digitalWrite(PIN_VIBRA_IN, LOW);
       digitalWrite(PIN_LIGHT_IN, LOW);
-      delay(pause * 1000);
+      delay(_radioData.pauseTime * 1000);
     } else {
-      digitalWrite(destinationPin, HIGH);
-      delay(period * 1000);
-      digitalWrite(destinationPin, LOW);
-      delay(pause * 1000);
+      digitalWrite(controlPin, HIGH);
+      delay(_radioData.periodTime * 1000);
+      digitalWrite(controlPin, LOW);
+      delay(_radioData.pauseTime * 1000);
     }
   }
 }
 
 void respondBroadCast() {
-
 }
 
 void setup() {
@@ -162,7 +156,7 @@ void setup() {
   Serial.print("Device ID: ");
   Serial.println(RADIO_ID);
 
-  // Motor and light Iput config
+  // Motor and light Input config
   pinMode(PIN_VIBRA_IN, OUTPUT);
   pinMode(PIN_LIGHT_IN, OUTPUT);
 
@@ -181,17 +175,18 @@ void setup() {
 }
 
 void loop() {
-  int opcode, tmp1, tmp2, tmp3;
   while (_radio.hasData()) {
     _radio.readData(&_radioData);
     Serial.println("Has data: ");
-    Serial.println(_radioData.command);
     Serial.println(_radioData.opcode);
-    if (_radioData.opcode != BROAD_CAST) {
-      handleControlCommand(_radioData.command.c_str(), _radioData.opcode);
+    Serial.println(_radioData.fromID);
+    Serial.println(_radioData.controlTime);
+    Serial.println(_radioData.periodTime);
+    Serial.println(_radioData.pauseTime);
+    if (_radioData.opcode != BRD) {
+      handleControlCommand();
     } else {
-      Serial.println("send respond: ...");
-      // respondBroadCast();
+      Serial.println("Active!");
     }
   }
 }

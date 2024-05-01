@@ -36,68 +36,124 @@ const static uint8_t PIN_RADIO_MISO = 19;
 const static uint8_t PIN_RADIO_SCK = 18;
 const static uint8_t PIN_VIBRA_IN = 15;
 
-const static uint8_t RADIO_ID = 100;
-static uint8_t DESTINATION_RADIO_ID = 2;
+const static uint8_t TRANSMITTER_RADIO_ID = 100;
+static uint8_t DESTINATION_RADIO_ID;
+// Receiver devices are identified based on 4-bit jumpers -> 16 devices numbered from 0 -> 15
+const static uint8_t RECEIVER_RADIO_ID_RANGE = 16;
 
-
-// Note the packed attribute.
+// Define the opcode of the instruction corresponding to the control modes
 typedef enum {
-  VIBRATE,
-  LIGHT,
-  VIBATE_LIGHT,
-  BROAD_CAST
+  VBR,  // Vibrate
+  LGT,  // Light
+  VLG,  // Vibrate and light
+  BRD   // Broadcast
 } Opcode_t;
 
-struct __attribute__((packed)) RadioPacket  // Note the packed attribute.
-{
+// Note the packed attribute.
+struct __attribute__((packed)) RadioPacket {
   Opcode_t opcode;
-  String command;
+  uint8_t fromID;
+  uint8_t controlTime,
+    periodTime,
+    pauseTime;
 };
 
 NRFLite _radio;
 RadioPacket _radioData;
 
-void setup()
-{
+/* instructionInput format: 
+  VBR/VGT/VLG opcode  : {opcode} {destination ID} {control time} {period time} {pause time}
+    Ex: VBR 9 5 3 2
+      {destination ID}: Radio Id of the receiving device. In the example ID is 9
+      {controlTime}   : If the value is 0, then {vibrate/light up} until the button on the device is pressed, 
+                        if not 0, then {vibrate/light up} until the specified time period.ype int, in seconds.
+                        In the example, control time is 5s.
+      {period} {pause}: Specify the time for the device to repeat. 
+                        In the example, then after 3 seconds of vibrate/light up the device will stop for 2s 
+                        then continue to vibrate/light up.
+  Broadcast           : BRD
+    Just send the opcode to all receiving devices and wait for their response.
+*/
+void readInstructionInput(String instructionInput) {
+  // Get opcode
+  int index = instructionInput.indexOf(' ');  // Find the position of the first space
+  String opcodeInput = instructionInput.substring(0, index);
+  if (opcodeInput == "VBR") {
+    _radioData.opcode = VBR;
+    Serial.println("Vibrate mode");
+  } else if (opcodeInput == "LGT") {
+    _radioData.opcode = LGT;
+    Serial.println("Light mode");
+  } else if (opcodeInput == "VLG") {
+    _radioData.opcode = VLG;
+    Serial.println("Vibrate and light mode");
+  } else if (opcodeInput == "BRD") {
+    _radioData.opcode = BRD;
+    Serial.println("BroadCast mode");
+    return;
+  }
+
+  // Get the remaining ingredients: {destination ID} {control time} {period time} {pause time}
+  String restStr = instructionInput.substring(index + 1);
+  sscanf(restStr.c_str(), "%d %d %d %d", &DESTINATION_RADIO_ID,
+         &_radioData.controlTime,
+         &_radioData.periodTime,
+         &_radioData.pauseTime);
+}
+
+void setup() {
   Serial.begin(9600);
-    
+
   // Configure SPI pins.
   SPI.begin(PIN_RADIO_SCK, PIN_RADIO_MISO, PIN_RADIO_MOSI, PIN_RADIO_CSN);
   // Indicate to NRFLite that it should not call SPI.begin() during initialization since it has already been done.
   uint8_t callSpiBegin = 0;
-    
-  if (!_radio.init(RADIO_ID, PIN_RADIO_CE, PIN_RADIO_CSN, NRFLite::BITRATE2MBPS, 100, callSpiBegin))
-  {
+
+  if (!_radio.init(TRANSMITTER_RADIO_ID, PIN_RADIO_CE, PIN_RADIO_CSN, NRFLite::BITRATE2MBPS, 100, callSpiBegin)) {
     Serial.println("Cannot communicate with radio");
-    while (1); // Wait here forever.
+    while (1)
+      ;  // Wait here forever.
   }
+  _radioData.fromID = TRANSMITTER_RADIO_ID;
   Serial.println("Setup done!");
 }
 
-void loop()
-{
+void loop() {
   while (!Serial.available()) {
     // Chờ đến khi có dữ liệu được gửi đến từ serial monitor
   }
 
-  // Đọc dữ liệu được gửi từ serial với định dạng: "DESTINATION_RADIO_ID VibraionTime Message"
-  _radioData.opcode = VIBATE_LIGHT;
-  _radioData.command = Serial.readStringUntil('\n');
-  Serial.println(_radioData.opcode);
-
-  Serial.print("Sending: ");
-    
-    if (_radio.send(DESTINATION_RADIO_ID, &_radioData, sizeof(_radioData)))
-    {
-        Serial.println("...Success");
-        Serial.println(_radioData.command);
-        _radioData.command = "";
-    }
-    else
-    {
-        Serial.println("...Failed");
-        _radioData.command = "";
+  /* instructionInput format: 
+  VBR/VGT/VLG opcode  : {opcode} {destination ID} {control time} {period time} {pause time}
+  Broadcast           : BRD
+  */
+  String instructionInput = Serial.readStringUntil('\n');
+  readInstructionInput(instructionInput);
+  uint32_t _lastBroadcastTime;
+  if (_radioData.opcode == BRD) {
+    Serial.println("Sending broadcast: ...");
+    for (uint8_t i = 0; i < RECEIVER_RADIO_ID_RANGE; i++) {
+      if (_radio.send(i, &_radioData, sizeof(_radioData))) {
+        Serial.println("Device ID " + String(i) + " active!");
+      } else {
+        Serial.println("Device ID " + String(i) + " inactive!");
+      }
     }
 
-    delay(1000);
+  } else {
+    Serial.print("Sending to ID " + String(DESTINATION_RADIO_ID) + ": ...");
+
+    if (_radio.send(DESTINATION_RADIO_ID, &_radioData, sizeof(_radioData))) {
+      Serial.println("...Success");
+      Serial.println(DESTINATION_RADIO_ID);
+      Serial.println(_radioData.opcode);
+      Serial.println(_radioData.controlTime);
+      Serial.println(_radioData.periodTime);
+      Serial.println(_radioData.pauseTime);
+    } else {
+      Serial.println("...Failed");
+    }
+  }
+
+  delay(1000);
 }
