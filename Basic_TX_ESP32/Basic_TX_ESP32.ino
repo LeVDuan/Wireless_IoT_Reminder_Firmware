@@ -72,7 +72,7 @@ RadioPacket _radioData;
                         In the example, then after 3 seconds of vibrate/light up the device will stop for 2s 
                         then continue to vibrate/light up.
   Broadcast           : BRD
-    Just send the opcode to all receiving devices and wait for their response.
+    Send vibration in 5s signals to all devices
 */
 void readInstructionInput(String instructionInput) {
   // Get opcode
@@ -89,6 +89,7 @@ void readInstructionInput(String instructionInput) {
     Serial.println("Vibrate and light mode");
   } else if (opcodeInput == "BRD") {
     _radioData.opcode = BRD;
+    _radioData.controlTime = 5;
     Serial.println("BroadCast mode");
     return;
   }

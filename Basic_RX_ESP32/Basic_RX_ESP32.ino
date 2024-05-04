@@ -145,9 +145,6 @@ void handleControlCommand() {
   }
 }
 
-void respondBroadCast() {
-}
-
 void setup() {
   Serial.begin(9600);
 
@@ -185,8 +182,11 @@ void loop() {
     Serial.println(_radioData.pauseTime);
     if (_radioData.opcode != BRD) {
       handleControlCommand();
-    } else {
+    } else { // BRD broadcast mode
       Serial.println("Active!");
+      digitalWrite(PIN_VIBRA_IN, HIGH);
+      delay(_radioData.controlTime * 1000);
+      digitalWrite(PIN_VIBRA_IN, LOW);
     }
   }
 }

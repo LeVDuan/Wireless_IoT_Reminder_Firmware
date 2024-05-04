@@ -28,4 +28,4 @@ These instructions will guide you on how to deploy the project on a live system.
 
 ## Usage
 
-Once the firmware is uploaded to the ESP32 board, the system is ready to use. You can set reminders through the serial monitor in the Arduino IDE..
+Once the firmware is uploaded to the ESP32 board, the system is ready to use. You can set reminders through the serial monitor in the Arduino IDE.
