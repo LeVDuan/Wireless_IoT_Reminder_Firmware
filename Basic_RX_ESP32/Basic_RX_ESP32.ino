@@ -45,13 +45,17 @@ typedef enum {
   VBR,  // Vibrate
   LGT,  // Light
   VLG,  // Vibrate and light
-  BRD   // Broadcast
+  BRD,
+  REQ,
+  BEGIN,
+  END  // Broadcast
 } Opcode_t;
 
 // Note the packed attribute.
 struct __attribute__((packed)) RadioPacket {
   Opcode_t opcode;
   uint8_t fromID;
+  int pin;
   uint8_t controlTime,
     periodTime,
     pauseTime;
@@ -59,6 +63,8 @@ struct __attribute__((packed)) RadioPacket {
 
 NRFLite _radio;
 RadioPacket _radioData;
+RadioPacket _resData;
+
 
 int getID() {
   uint8_t radio_id = -1;
@@ -170,23 +176,45 @@ void setup() {
     Serial.println("Setup done!");
   }
 }
-
+const int potPin = 34;
+int potValue = 0;
 void loop() {
   while (_radio.hasData()) {
     _radio.readData(&_radioData);
-    Serial.println("Has data: ");
-    Serial.println(_radioData.opcode);
-    Serial.println(_radioData.fromID);
-    Serial.println(_radioData.controlTime);
-    Serial.println(_radioData.periodTime);
-    Serial.println(_radioData.pauseTime);
-    if (_radioData.opcode != BRD) {
-      handleControlCommand();
-    } else { // BRD broadcast mode
-      Serial.println("Active!");
+
+    Serial.print("Has Data: ");
+    Serial.print(String(_radioData.opcode) + " ");
+    Serial.print(String(_radioData.fromID) + " ");
+    Serial.print(String(_radioData.controlTime) + "\n");
+
+
+    if (_radioData.opcode == BRD) {
       digitalWrite(PIN_VIBRA_IN, HIGH);
       delay(_radioData.controlTime * 1000);
       digitalWrite(PIN_VIBRA_IN, LOW);
+    } else if (_radioData.opcode == BEGIN) {
+
+      Serial.println("Active!");
+      potValue = analogRead(potPin);
+      Serial.println("Received data request, adding ACK data packet");
+
+      RadioPacket ackData;
+      ackData.opcode = REQ;
+      ackData.pin = potValue;
+      Serial.println(ackData.pin);
+
+      ackData.fromID = RADIO_ID;
+
+      // Add the data to send back to the transmitter into the radio.
+      // The next packet we receive will be acknowledged with this data.
+      _radio.addAckData(&ackData, sizeof(ackData));
+
+    } else if (_radioData.opcode == END) {  // BRD broadcast mode
+      Serial.println("End send to transmitter");
+    } else {
+      handleControlCommand();
     }
+      Serial.println("wait data");
+
   }
 }

@@ -38,21 +38,28 @@ const static uint8_t PIN_VIBRA_IN = 15;
 
 const static uint8_t TRANSMITTER_RADIO_ID = 100;
 static uint8_t DESTINATION_RADIO_ID;
+const static uint8_t ACTIVE = 1;
+const static uint8_t INACTIVE = 0;
 // Receiver devices are identified based on 4-bit jumpers -> 16 devices numbered from 0 -> 15
 const static uint8_t RECEIVER_RADIO_ID_RANGE = 16;
+uint8_t activeDevices[RECEIVER_RADIO_ID_RANGE];
 
 // Define the opcode of the instruction corresponding to the control modes
 typedef enum {
   VBR,  // Vibrate
   LGT,  // Light
   VLG,  // Vibrate and light
-  BRD   // Broadcast
+  BRD,
+  REQ,
+  BEGIN,
+  END  // Broadcast
 } Opcode_t;
 
 // Note the packed attribute.
 struct __attribute__((packed)) RadioPacket {
   Opcode_t opcode;
   uint8_t fromID;
+  int pin;
   uint8_t controlTime,
     periodTime,
     pauseTime;
@@ -92,6 +99,10 @@ void readInstructionInput(String instructionInput) {
     _radioData.controlTime = 5;
     Serial.println("BroadCast mode");
     return;
+  } else if (opcodeInput == "REQ") {
+    _radioData.opcode = REQ;
+    Serial.println("Request mode");
+    return;
   }
 
   // Get the remaining ingredients: {destination ID} {control time} {period time} {pause time}
@@ -104,6 +115,7 @@ void readInstructionInput(String instructionInput) {
 
 void setup() {
   Serial.begin(9600);
+  memset(activeDevices, 0, sizeof(activeDevices));
 
   // Configure SPI pins.
   SPI.begin(PIN_RADIO_SCK, PIN_RADIO_MISO, PIN_RADIO_MOSI, PIN_RADIO_CSN);
@@ -135,12 +147,23 @@ void loop() {
     Serial.println("Sending broadcast: ...");
     for (uint8_t i = 0; i < RECEIVER_RADIO_ID_RANGE; i++) {
       if (_radio.send(i, &_radioData, sizeof(_radioData))) {
+        activeDevices[i] = ACTIVE;
         Serial.println("Device ID " + String(i) + " active!");
       } else {
+        activeDevices[i] = INACTIVE;
         Serial.println("Device ID " + String(i) + " inactive!");
       }
     }
 
+  } else if (_radioData.opcode == REQ) {
+    Serial.println("Sending request get status: ...");
+    for (uint8_t i = 0; i < RECEIVER_RADIO_ID_RANGE; i++) {
+      if (activeDevices[i] == ACTIVE) {
+        Serial.println(String(i));
+        requestData(i);
+      }
+    }
+    Serial.println();
   } else {
     Serial.print("Sending to ID " + String(DESTINATION_RADIO_ID) + ": ...");
 
@@ -155,6 +178,38 @@ void loop() {
       Serial.println("...Failed");
     }
   }
+  delay(500);
+}
 
-  delay(1000);
+void requestData(uint8_t id) {
+  Serial.println("Requesting data");
+
+  RadioPacket radioData;
+  radioData.opcode = BEGIN;
+  radioData.fromID = TRANSMITTER_RADIO_ID; // When the receiver sees this packet type, it will load an ACK data packet.
+  if (_radio.send(id, &radioData, sizeof(radioData))) {
+    Serial.println("...Success");
+    Serial.print("  Sending EndGetData");
+    radioData.opcode = END;
+
+    if (_radio.send(id, &radioData, sizeof(radioData))) {
+      while (_radio.hasAckData())  // Look to see if the receiver provided the ACK data.
+      {
+        RadioPacket ackData;
+        _radio.readData(&ackData);
+
+        if (ackData.opcode == REQ) {
+          String msg = "  Received ACK data from ";
+          msg += ackData.fromID;
+          msg += ", pin status: ";
+          msg += ackData.pin;
+          Serial.println(msg);
+        }
+      }
+    } else {
+      Serial.println("...Failed");
+    }
+  } else {
+    Serial.println("...Failed");
+  }
 }
