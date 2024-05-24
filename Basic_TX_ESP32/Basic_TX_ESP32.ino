@@ -59,7 +59,7 @@ typedef enum {
 struct __attribute__((packed)) RadioPacket {
   Opcode_t opcode;
   uint8_t fromID;
-  int pin;
+  uint16_t pin;
   uint8_t controlTime,
     periodTime,
     pauseTime;
